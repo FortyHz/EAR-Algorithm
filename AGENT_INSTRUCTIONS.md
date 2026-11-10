@@ -1,0 +1,5 @@
+- READ-WRITE access is strictly limited to src/engine/ and tests/.
+- READ-ONLY access applies to harness.py, benchmarks/, and specs/.
+- Never modify harness.py or benchmarks/ground_truth_cases.json to make a failing test pass.
+- Every code mutation in src/engine/ must be verified by running python3 harness.py.
+- Do not output conversational filler; always report exact JSON output from harness.py and current git status.
