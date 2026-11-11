@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "speed_mps": 13.88,
   "cases": [
     {
@@ -100,6 +100,60 @@
         "feasible": true,
         "insert_pickup_index": 2,
         "insert_dropoff_index": 2
+      }
+    },
+    {
+      "case_id": "CASE_05_CORRIDOR_SWAP_SUBSTITUTION",
+      "type": "SUBSTITUTION",
+      "description": "Primary route between current location and D1 is hit by a 900s traffic blockage. Stop D1 only has 300s of slack. However, pre-cached disjoint Fallback Route #2 adds only 180s delay. Engine must hot-swap to Fallback Route #2 without ejecting stops.",
+      "platform": "ENTROPIC_FREIGHT",
+      "vehicle": {
+        "id": "veh_05",
+        "capacity_max": 4,
+        "current_x": 0.0,
+        "current_y": 0.0,
+        "stops": [
+          {"name": "D1", "x": 5000.0, "y": 0.0, "is_pickup": false, "load_change": -2, "latest_time_sec": 660.0, "request_id": "req_onboard_1"}
+        ],
+        "fallback_routes": [
+          {"route_id": "fallback_01", "extra_time_sec": 180.0, "disjoint_score": 0.85}
+        ]
+      },
+      "anomaly": {
+        "affected_stop_index": 0,
+        "primary_delay_sec": 900.0
+      },
+      "expected": {
+        "action": "SWAPPED_DISJOINT_CORRIDOR",
+        "selected_fallback_id": "fallback_01",
+        "ejected_request_ids": []
+      }
+    },
+    {
+      "case_id": "CASE_06_DESTROY_AND_REPAIR_EJECTION",
+      "type": "SUBSTITUTION",
+      "description": "Severe road closure adds 1500s delay before P2. No fallback route can save P2's deadline, and keeping P2 would cause onboard passenger D1 to breach SLA. Engine must lock onboard dropoff D1 and eject unvisited pickup P2 (req_unvisited_2) for re-auction.",
+      "platform": "TRIPPY_POOL",
+      "vehicle": {
+        "id": "veh_06",
+        "capacity_max": 4,
+        "current_x": 0.0,
+        "current_y": 0.0,
+        "stops": [
+          {"name": "P2", "x": 2000.0, "y": 500.0, "is_pickup": true, "load_change": 1, "latest_time_sec": 300.0, "request_id": "req_unvisited_2"},
+          {"name": "D2", "x": 3500.0, "y": 500.0, "is_pickup": false, "load_change": -1, "latest_time_sec": 600.0, "request_id": "req_unvisited_2"},
+          {"name": "D1", "x": 4000.0, "y": 0.0, "is_pickup": false, "load_change": -1, "latest_time_sec": 500.0, "request_id": "req_onboard_1"}
+        ],
+        "fallback_routes": []
+      },
+      "anomaly": {
+        "affected_stop_index": 0,
+        "primary_delay_sec": 1500.0
+      },
+      "expected": {
+        "action": "EJECTED_TO_REAUCTION",
+        "selected_fallback_id": null,
+        "ejected_request_ids": ["req_unvisited_2"]
       }
     }
   ]
