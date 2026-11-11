@@ -1,36 +1,50 @@
 {
-  "bench_hash": "46d9d8eee22c",
-  "passed": 4,
+  "bench_hash": "a785acc067a6",
+  "passed": 6,
   "failed": 0,
   "total_marginal_cost": 94.534,
-  "max_latency_ms": 0.0811,
+  "max_latency_ms": 0.0593,
   "cases": [
     {
       "case_id": "CASE_01_CAPACITY_REJECT",
       "passed": true,
-      "latency_ms": 0.0783,
+      "latency_ms": 0.0593,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_02_SLACK_BREACH_REJECT",
       "passed": true,
-      "latency_ms": 0.0811,
+      "latency_ms": 0.0347,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_03_OPTIMAL_MID_ROUTE_SPLICE",
       "passed": true,
-      "latency_ms": 0.0792,
+      "latency_ms": 0.0254,
       "marginal_cost": 1.021,
       "error": null
     },
     {
       "case_id": "CASE_04_SEQUENTIAL_APPEND_BACKHAUL",
       "passed": true,
-      "latency_ms": 0.0661,
+      "latency_ms": 0.0223,
       "marginal_cost": 93.513,
+      "error": null
+    },
+    {
+      "case_id": "CASE_05_CORRIDOR_SWAP_SUBSTITUTION",
+      "passed": true,
+      "latency_ms": 0.0135,
+      "marginal_cost": null,
+      "error": null
+    },
+    {
+      "case_id": "CASE_06_DESTROY_AND_REPAIR_EJECTION",
+      "passed": true,
+      "latency_ms": 0.0118,
+      "marginal_cost": null,
       "error": null
     }
   ]

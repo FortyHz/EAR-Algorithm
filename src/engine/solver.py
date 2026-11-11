@@ -112,3 +112,82 @@ def evaluate_request_insertion(
         "marginal_cost": best_cost,
         "max_slack_violation_sec": 0.0,
     }
+
+
+def evaluate_route_substitution(
+    vehicle: dict,
+    anomaly: dict,
+    platform: str,
+    speed_mps: float,
+) -> dict:
+    stops = vehicle["stops"]
+    cur_x, cur_y = vehicle["current_x"], vehicle["current_y"]
+
+    # 1. Baseline ETAs for all stops in vehicle["stops"] starting from current location at t = 0.0
+    baseline_etas = []
+    cumulative_dist_m = 0.0
+    cx, cy = cur_x, cur_y
+    for stop in stops:
+        cumulative_dist_m += math.hypot(stop["x"] - cx, stop["y"] - cy)
+        baseline_etas.append(cumulative_dist_m / speed_mps)
+        cx, cy = stop["x"], stop["y"]
+
+    affected_idx = anomaly["affected_stop_index"]
+    primary_delay = anomaly["primary_delay_sec"]
+
+    # 3. Check if primary route with primary_delay added violates any deadline
+    primary_violates = False
+    for k in range(len(stops)):
+        eta = baseline_etas[k]
+        if k >= affected_idx:
+            eta += primary_delay
+        if eta > stops[k]["latest_time_sec"]:
+            primary_violates = True
+            break
+
+    if not primary_violates:
+        return {
+            "action": "NO_ACTION_REQUIRED",
+            "selected_fallback_id": None,
+            "ejected_request_ids": [],
+        }
+
+    # 4. TIER 1 — Disjoint Fallback Corridor Swap
+    valid_fallbacks = []
+    for fb in vehicle.get("fallback_routes", []):
+        extra_t = fb["extra_time_sec"]
+        fb_violates = False
+        for k in range(len(stops)):
+            eta = baseline_etas[k]
+            if k >= affected_idx:
+                eta += extra_t
+            if eta > stops[k]["latest_time_sec"]:
+                fb_violates = True
+                break
+        if not fb_violates:
+            valid_fallbacks.append(fb)
+
+    if valid_fallbacks:
+        best_fb = min(valid_fallbacks, key=lambda x: x["extra_time_sec"])
+        return {
+            "action": "SWAPPED_DISJOINT_CORRIDOR",
+            "selected_fallback_id": best_fb["route_id"],
+            "ejected_request_ids": [],
+        }
+
+    # 5. TIER 2 — Destroy-and-Repair Stop Ejection (Re-Auction)
+    ejected_request_ids = []
+    seen = set()
+    for k in range(affected_idx, len(stops)):
+        stop = stops[k]
+        if stop.get("is_pickup") and stop.get("request_id"):
+            rid = stop["request_id"]
+            if rid not in seen:
+                seen.add(rid)
+                ejected_request_ids.append(rid)
+
+    return {
+        "action": "EJECTED_TO_REAUCTION",
+        "selected_fallback_id": None,
+        "ejected_request_ids": ejected_request_ids,
+    }
