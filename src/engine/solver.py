@@ -1,24 +1,48 @@
 import math
 
 
+def _get_leg_metric(
+    from_node: dict,
+    to_node: dict,
+    speed_mps: float,
+    street_matrix: dict = None,
+) -> tuple[float, float]:
+    if street_matrix and "matrix_node_index" in from_node and "matrix_node_index" in to_node:
+        u = from_node["matrix_node_index"]
+        v = to_node["matrix_node_index"]
+        return float(street_matrix["distances_m"][u][v]), float(street_matrix["durations_sec"][u][v])
+    dist_m = math.hypot(to_node["x"] - from_node["x"], to_node["y"] - from_node["y"])
+    return dist_m, dist_m / speed_mps
+
+
 def evaluate_request_insertion(
     vehicle: dict,
     request: dict,
     platform: str,
     speed_mps: float,
+    street_matrix: dict = None,
 ) -> dict:
     stops = vehicle["stops"]
     n_stops = len(stops)
 
-    # Calculate baseline route distance and duration starting from (current_x, current_y)
-    cur_x, cur_y = vehicle["current_x"], vehicle["current_y"]
-    baseline_dist_m = 0.0
-    for stop in stops:
-        baseline_dist_m += math.hypot(stop["x"] - cur_x, stop["y"] - cur_y)
-        cur_x, cur_y = stop["x"], stop["y"]
-    baseline_duration_sec = baseline_dist_m / speed_mps
+    origin_node = {
+        "x": vehicle["current_x"],
+        "y": vehicle["current_y"],
+    }
+    if "matrix_node_index" in vehicle:
+        origin_node["matrix_node_index"] = vehicle["matrix_node_index"]
 
-    # Active trajectory vector for directional corridor preservation
+    # Calculate baseline route distance and duration starting from origin
+    prev_node = origin_node
+    baseline_dist_m = 0.0
+    baseline_duration_sec = 0.0
+    for stop in stops:
+        d_m, t_sec = _get_leg_metric(prev_node, stop, speed_mps, street_matrix)
+        baseline_dist_m += d_m
+        baseline_duration_sec += t_sec
+        prev_node = stop
+
+    # Active trajectory vector for directional corridor preservation in Euclidean flatland
     if n_stops > 0:
         traj_x = stops[-1]["x"] - vehicle["current_x"]
         traj_y = stops[-1]["y"] - vehicle["current_y"]
@@ -34,6 +58,9 @@ def evaluate_request_insertion(
         "load_change": request["load"],
         "latest_time_sec": request["pickup"]["latest_time_sec"],
     }
+    if "matrix_node_index" in request["pickup"]:
+        p_stop["matrix_node_index"] = request["pickup"]["matrix_node_index"]
+
     d_stop = {
         "name": request["dropoff"]["name"],
         "x": request["dropoff"]["x"],
@@ -42,6 +69,8 @@ def evaluate_request_insertion(
         "load_change": -request["load"],
         "latest_time_sec": request["dropoff"]["latest_time_sec"],
     }
+    if "matrix_node_index" in request["dropoff"]:
+        d_stop["matrix_node_index"] = request["dropoff"]["matrix_node_index"]
 
     best_i = None
     best_j = None
@@ -55,18 +84,18 @@ def evaluate_request_insertion(
             else:
                 candidate = stops[:i] + [p_stop] + stops[i:j] + [d_stop] + stops[j:]
 
-            # Forward Pass on candidate sequence (length N + 2)
-            cur_x, cur_y = vehicle["current_x"], vehicle["current_y"]
+            prev_node = origin_node
             running_load = 0
             candidate_dist_m = 0.0
+            candidate_duration_sec = 0.0
             feasible = True
 
             for stop in candidate:
-                dx = stop["x"] - cur_x
-                dy = stop["y"] - cur_y
+                dx = stop["x"] - prev_node["x"]
+                dy = stop["y"] - prev_node["y"]
 
-                # Enforce directional corridor alignment (disallow anti-directional backtracking)
-                if (dx * traj_x + dy * traj_y) < 0:
+                # Enforce directional corridor alignment when street_matrix is not supplied
+                if not street_matrix and (dx * traj_x + dy * traj_y) < 0:
                     feasible = False
                     break
 
@@ -75,18 +104,17 @@ def evaluate_request_insertion(
                     feasible = False
                     break
 
-                dist = math.hypot(dx, dy)
-                candidate_dist_m += dist
-                eta_sec = candidate_dist_m / speed_mps
+                leg_d, leg_t = _get_leg_metric(prev_node, stop, speed_mps, street_matrix)
+                candidate_dist_m += leg_d
+                candidate_duration_sec += leg_t
 
-                if eta_sec > stop["latest_time_sec"]:
+                if candidate_duration_sec > stop["latest_time_sec"]:
                     feasible = False
                     break
 
-                cur_x, cur_y = stop["x"], stop["y"]
+                prev_node = stop
 
             if feasible:
-                candidate_duration_sec = candidate_dist_m / speed_mps
                 delta_time = candidate_duration_sec - baseline_duration_sec
                 delta_dist_km = (candidate_dist_m - baseline_dist_m) / 1000.0
 
@@ -190,4 +218,32 @@ def evaluate_route_substitution(
         "action": "EJECTED_TO_REAUCTION",
         "selected_fallback_id": None,
         "ejected_request_ids": ejected_request_ids,
+    }
+
+
+def dispatch_request_to_fleet(
+    candidates: list,
+    request: dict,
+    platform: str,
+    speed_mps: float,
+    street_matrices: dict = None,
+) -> dict:
+    eligible = []
+    for vehicle in candidates:
+        veh_matrix = street_matrices.get(vehicle["id"]) if street_matrices else None
+        res = evaluate_request_insertion(vehicle, request, platform, speed_mps, street_matrix=veh_matrix)
+        if res.get("feasible"):
+            eligible.append({
+                "vehicle_id": vehicle["id"],
+                "marginal_cost": res["marginal_cost"],
+                "insert_pickup_index": res["insert_pickup_index"],
+                "insert_dropoff_index": res["insert_dropoff_index"],
+            })
+
+    eligible.sort(key=lambda x: x["marginal_cost"])
+
+    return {
+        "winning_vehicle_id": eligible[0]["vehicle_id"] if eligible else None,
+        "eligible_count": len(eligible),
+        "ranked_candidates": eligible,
     }

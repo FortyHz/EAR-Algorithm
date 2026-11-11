@@ -1,42 +1,42 @@
 {
-  "bench_hash": "a785acc067a6",
-  "passed": 6,
+  "bench_hash": "afa3398c60f9",
+  "passed": 8,
   "failed": 0,
-  "total_marginal_cost": 94.534,
-  "max_latency_ms": 0.0593,
+  "total_marginal_cost": 17.869,
+  "max_latency_ms": 0.085,
   "cases": [
     {
       "case_id": "CASE_01_CAPACITY_REJECT",
       "passed": true,
-      "latency_ms": 0.0593,
+      "latency_ms": 0.07,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_02_SLACK_BREACH_REJECT",
       "passed": true,
-      "latency_ms": 0.0347,
+      "latency_ms": 0.0328,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_03_OPTIMAL_MID_ROUTE_SPLICE",
       "passed": true,
-      "latency_ms": 0.0254,
+      "latency_ms": 0.0294,
       "marginal_cost": 1.021,
       "error": null
     },
     {
       "case_id": "CASE_04_SEQUENTIAL_APPEND_BACKHAUL",
       "passed": true,
-      "latency_ms": 0.0223,
+      "latency_ms": 0.0263,
       "marginal_cost": 93.513,
       "error": null
     },
     {
       "case_id": "CASE_05_CORRIDOR_SWAP_SUBSTITUTION",
       "passed": true,
-      "latency_ms": 0.0135,
+      "latency_ms": 0.0149,
       "marginal_cost": null,
       "error": null
     },
@@ -44,6 +44,20 @@
       "case_id": "CASE_06_DESTROY_AND_REPAIR_EJECTION",
       "passed": true,
       "latency_ms": 0.0118,
+      "marginal_cost": null,
+      "error": null
+    },
+    {
+      "case_id": "CASE_07_STREET_MATRIX_ASYMMETRY_TRAP",
+      "passed": true,
+      "latency_ms": 0.085,
+      "marginal_cost": -76.665,
+      "error": null
+    },
+    {
+      "case_id": "CASE_08_FLEET_DISPATCH_TOURNAMENT",
+      "passed": true,
+      "latency_ms": 0.0825,
       "marginal_cost": null,
       "error": null
     }
