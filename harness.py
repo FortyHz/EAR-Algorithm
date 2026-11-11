@@ -165,6 +165,51 @@ def run_harness():
                 "error": fail_reason
             })
 
+        elif case_type == "END_TO_END_PIPELINE":
+            try:
+                from src.api.dispatch_pipeline import process_live_dispatch
+            except ImportError as e:
+                print(json.dumps({"status": "ERROR", "reason": f"Dispatch pipeline import failed: {str(e)}", "bench_hash": bench_hash}))
+                sys.exit(1)
+
+            t0 = time.perf_counter()
+            try:
+                result = process_live_dispatch(case["fleet"], case["request"], case["platform"], speed_mps)
+            except Exception as e:
+                result = {"spatial_filtered_count": None, "winning_vehicle_id": None, "eligible_count": None, "_error": str(e)}
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+            exp = case["expected"]
+            case_ok = True
+            fail_reason = None
+
+            if "_error" in result:
+                case_ok = False
+                fail_reason = f"Execution error: {result['_error']}"
+            elif result.get("spatial_filtered_count") != exp["spatial_filtered_count"]:
+                case_ok = False
+                fail_reason = f"Expected spatial_filtered_count={exp['spatial_filtered_count']}, got {result.get('spatial_filtered_count')}"
+            elif result.get("winning_vehicle_id") != exp["winning_vehicle_id"]:
+                case_ok = False
+                fail_reason = f"Expected winning_vehicle_id={exp['winning_vehicle_id']}, got {result.get('winning_vehicle_id')}"
+            elif result.get("eligible_count") != exp["eligible_count"]:
+                case_ok = False
+                fail_reason = f"Expected eligible_count={exp['eligible_count']}, got {result.get('eligible_count')}"
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": None,
+                "error": fail_reason
+            })
+
         else:
             t0 = time.perf_counter()
             try:
