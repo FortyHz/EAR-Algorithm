@@ -28,7 +28,9 @@ def run_harness():
     case_reports = []
 
     for case in data["cases"]:
-        if case.get("type") == "SUBSTITUTION":
+        case_type = case.get("type")
+
+        if case_type == "SUBSTITUTION":
             try:
                 from src.engine.solver import evaluate_route_substitution
             except ImportError as e:
@@ -36,7 +38,10 @@ def run_harness():
                 sys.exit(1)
 
             t0 = time.perf_counter()
-            result = evaluate_route_substitution(case["vehicle"], case["anomaly"], case["platform"], speed_mps)
+            try:
+                result = evaluate_route_substitution(case["vehicle"], case["anomaly"], case["platform"], speed_mps)
+            except Exception as e:
+                result = {"action": None, "selected_fallback_id": None, "ejected_request_ids": None, "_error": str(e)}
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             latencies_ms.append(elapsed_ms)
 
@@ -44,7 +49,10 @@ def run_harness():
             case_ok = True
             fail_reason = None
 
-            if result.get("action") != exp["action"]:
+            if "_error" in result:
+                case_ok = False
+                fail_reason = f"Execution error: {result['_error']}"
+            elif result.get("action") != exp["action"]:
                 case_ok = False
                 fail_reason = f"Expected action={exp['action']}, got {result.get('action')}"
             elif result.get("selected_fallback_id") != exp["selected_fallback_id"]:
@@ -66,9 +74,19 @@ def run_harness():
                 "marginal_cost": None,
                 "error": fail_reason
             })
-        else:
+
+        elif case_type == "INSERTION_MATRIX":
             t0 = time.perf_counter()
-            result = evaluate_request_insertion(case["vehicle"], case["request"], case["platform"], speed_mps)
+            try:
+                result = evaluate_request_insertion(
+                    case["vehicle"],
+                    case["request"],
+                    case["platform"],
+                    speed_mps,
+                    street_matrix=case["street_matrix"]
+                )
+            except Exception as e:
+                result = {"feasible": None, "_error": str(e)}
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             latencies_ms.append(elapsed_ms)
 
@@ -76,7 +94,94 @@ def run_harness():
             case_ok = True
             fail_reason = None
 
-            if result.get("feasible") != exp["feasible"]:
+            if "_error" in result:
+                case_ok = False
+                fail_reason = f"Execution error: {result['_error']}"
+            elif result.get("feasible") != exp["feasible"]:
+                case_ok = False
+                fail_reason = f"Expected feasible={exp['feasible']}, got {result.get('feasible')}"
+            elif exp["feasible"]:
+                if result.get("insert_pickup_index") != exp["insert_pickup_index"] or result.get("insert_dropoff_index") != exp["insert_dropoff_index"]:
+                    case_ok = False
+                    fail_reason = f"Expected indices ({exp['insert_pickup_index']}, {exp['insert_dropoff_index']}), got ({result.get('insert_pickup_index')}, {result.get('insert_dropoff_index')})"
+                elif result.get("max_slack_violation_sec", 0.0) > 1e-6:
+                    case_ok = False
+                    fail_reason = f"SLA slack violated by {result.get('max_slack_violation_sec')}s"
+                else:
+                    total_cost += float(result.get("marginal_cost", 0.0))
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": round(float(result.get("marginal_cost", 0.0)), 3) if result.get("feasible") else None,
+                "error": fail_reason
+            })
+
+        elif case_type == "FLEET_DISPATCH":
+            try:
+                from src.engine.solver import dispatch_request_to_fleet
+            except ImportError as e:
+                print(json.dumps({"status": "ERROR", "reason": f"Solver import failed: {str(e)}", "bench_hash": bench_hash}))
+                sys.exit(1)
+
+            t0 = time.perf_counter()
+            try:
+                result = dispatch_request_to_fleet(case["candidates"], case["request"], case["platform"], speed_mps)
+            except Exception as e:
+                result = {"winning_vehicle_id": None, "eligible_count": None, "_error": str(e)}
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+            exp = case["expected"]
+            case_ok = True
+            fail_reason = None
+
+            if "_error" in result:
+                case_ok = False
+                fail_reason = f"Execution error: {result['_error']}"
+            elif result.get("winning_vehicle_id") != exp["winning_vehicle_id"]:
+                case_ok = False
+                fail_reason = f"Expected winning_vehicle_id={exp['winning_vehicle_id']}, got {result.get('winning_vehicle_id')}"
+            elif result.get("eligible_count") != exp["eligible_count"]:
+                case_ok = False
+                fail_reason = f"Expected eligible_count={exp['eligible_count']}, got {result.get('eligible_count')}"
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": None,
+                "error": fail_reason
+            })
+
+        else:
+            t0 = time.perf_counter()
+            try:
+                result = evaluate_request_insertion(case["vehicle"], case["request"], case["platform"], speed_mps)
+            except Exception as e:
+                result = {"feasible": None, "_error": str(e)}
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+            exp = case["expected"]
+            case_ok = True
+            fail_reason = None
+
+            if "_error" in result:
+                case_ok = False
+                fail_reason = f"Execution error: {result['_error']}"
+            elif result.get("feasible") != exp["feasible"]:
                 case_ok = False
                 fail_reason = f"Expected feasible={exp['feasible']}, got {result.get('feasible')}"
             elif exp["feasible"]:
