@@ -1,0 +1,37 @@
+{
+  "bench_hash": "46d9d8eee22c",
+  "passed": 4,
+  "failed": 0,
+  "total_marginal_cost": 94.534,
+  "max_latency_ms": 0.0811,
+  "cases": [
+    {
+      "case_id": "CASE_01_CAPACITY_REJECT",
+      "passed": true,
+      "latency_ms": 0.0783,
+      "marginal_cost": null,
+      "error": null
+    },
+    {
+      "case_id": "CASE_02_SLACK_BREACH_REJECT",
+      "passed": true,
+      "latency_ms": 0.0811,
+      "marginal_cost": null,
+      "error": null
+    },
+    {
+      "case_id": "CASE_03_OPTIMAL_MID_ROUTE_SPLICE",
+      "passed": true,
+      "latency_ms": 0.0792,
+      "marginal_cost": 1.021,
+      "error": null
+    },
+    {
+      "case_id": "CASE_04_SEQUENTIAL_APPEND_BACKHAUL",
+      "passed": true,
+      "latency_ms": 0.0661,
+      "marginal_cost": 93.513,
+      "error": null
+    }
+  ]
+}
