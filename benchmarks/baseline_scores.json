@@ -1,70 +1,77 @@
 {
-  "bench_hash": "d7aba06be96a",
-  "passed": 9,
+  "bench_hash": "0fdda644535e",
+  "passed": 10,
   "failed": 0,
   "total_marginal_cost": 17.869,
-  "max_latency_ms": 0.4078,
+  "max_latency_ms": 83.2894,
   "cases": [
     {
       "case_id": "CASE_01_CAPACITY_REJECT",
       "passed": true,
-      "latency_ms": 0.0636,
+      "latency_ms": 0.064,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_02_SLACK_BREACH_REJECT",
       "passed": true,
-      "latency_ms": 0.0738,
+      "latency_ms": 0.0417,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_03_OPTIMAL_MID_ROUTE_SPLICE",
       "passed": true,
-      "latency_ms": 0.03,
+      "latency_ms": 0.0303,
       "marginal_cost": 1.021,
       "error": null
     },
     {
       "case_id": "CASE_04_SEQUENTIAL_APPEND_BACKHAUL",
       "passed": true,
-      "latency_ms": 0.0263,
+      "latency_ms": 0.0259,
       "marginal_cost": 93.513,
       "error": null
     },
     {
       "case_id": "CASE_05_CORRIDOR_SWAP_SUBSTITUTION",
       "passed": true,
-      "latency_ms": 0.0135,
+      "latency_ms": 0.0146,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_06_DESTROY_AND_REPAIR_EJECTION",
       "passed": true,
-      "latency_ms": 0.0122,
+      "latency_ms": 0.0166,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_07_STREET_MATRIX_ASYMMETRY_TRAP",
       "passed": true,
-      "latency_ms": 0.0433,
+      "latency_ms": 0.0374,
       "marginal_cost": -76.665,
       "error": null
     },
     {
       "case_id": "CASE_08_FLEET_DISPATCH_TOURNAMENT",
       "passed": true,
-      "latency_ms": 0.0814,
+      "latency_ms": 0.08,
       "marginal_cost": null,
       "error": null
     },
     {
       "case_id": "CASE_09_END_TO_END_PIPELINE",
       "passed": true,
-      "latency_ms": 0.4078,
+      "latency_ms": 0.377,
+      "marginal_cost": null,
+      "error": null
+    },
+    {
+      "case_id": "CASE_10_FASTAPI_REST_CONTRACT",
+      "passed": true,
+      "latency_ms": 83.2894,
       "marginal_cost": null,
       "error": null
     }

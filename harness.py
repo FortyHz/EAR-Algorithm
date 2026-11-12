@@ -2,6 +2,7 @@ import hashlib
 import json
 import time
 import sys
+import warnings
 
 def get_benchmark_hash(filepath: str) -> str:
     with open(filepath, "rb") as f:
@@ -196,6 +197,68 @@ def run_harness():
             elif result.get("eligible_count") != exp["eligible_count"]:
                 case_ok = False
                 fail_reason = f"Expected eligible_count={exp['eligible_count']}, got {result.get('eligible_count')}"
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": None,
+                "error": fail_reason
+            })
+
+        elif case_type == "REST_API_CONTRACT":
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    from fastapi.testclient import TestClient
+                    from src.api.main import app
+                    client = TestClient(app)
+                except ImportError as e:
+                    print(json.dumps({"status": "ERROR", "reason": f"FastAPI app import failed: {str(e)}", "bench_hash": bench_hash}))
+                    sys.exit(1)
+
+            t0 = time.perf_counter()
+            case_ok = True
+            fail_reason = None
+
+            try:
+                # 1. Health check
+                r_health = client.get("/health")
+                if r_health.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Expected health status 200, got {r_health.status_code}"
+
+                # 2. Evaluate dispatch endpoint
+                r_eval = client.post("/api/v1/dispatch/evaluate", json=case["evaluate_payload"])
+                eval_data = r_eval.json()
+                if r_eval.status_code != case["expected"]["evaluate_status"]:
+                    case_ok = False
+                    fail_reason = f"Expected evaluate status {case['expected']['evaluate_status']}, got {r_eval.status_code}"
+                elif eval_data.get("winning_vehicle_id") != case["expected"]["winning_vehicle_id"]:
+                    case_ok = False
+                    fail_reason = f"Expected winning_vehicle_id={case['expected']['winning_vehicle_id']}, got {eval_data.get('winning_vehicle_id')}"
+
+                # 3. Substitute endpoint
+                r_sub = client.post("/api/v1/dispatch/substitute", json=case["substitute_payload"])
+                sub_data = r_sub.json()
+                if r_sub.status_code != case["expected"]["substitute_status"]:
+                    case_ok = False
+                    fail_reason = f"Expected substitute status {case['expected']['substitute_status']}, got {r_sub.status_code}"
+                elif sub_data.get("action") != case["expected"]["action"]:
+                    case_ok = False
+                    fail_reason = f"Expected action={case['expected']['action']}, got {sub_data.get('action')}"
+
+            except Exception as e:
+                case_ok = False
+                fail_reason = f"REST Client invocation error: {str(e)}"
+
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
 
             if case_ok:
                 passed += 1
