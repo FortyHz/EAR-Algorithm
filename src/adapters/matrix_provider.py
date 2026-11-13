@@ -25,11 +25,15 @@ class StreetMatrixProvider:
     ):
         self._valhalla_actor = None
         self._osrm_engine = None
+        self._valhalla_config_path = valhalla_config_path
+        self._osrm_data_path = osrm_data_path
+        self._init_engines()
 
-        v_cfg = valhalla_config_path or os.environ.get("VALHALLA_CONFIG")
-        o_path = osrm_data_path or os.environ.get("OSRM_DATA_PATH")
+    def _init_engines(self):
+        v_cfg = self._valhalla_config_path or os.environ.get("VALHALLA_CONFIG")
+        o_path = self._osrm_data_path or os.environ.get("OSRM_DATA_PATH")
 
-        if v_cfg and Path(v_cfg).exists():
+        if self._valhalla_actor is None and v_cfg and Path(v_cfg).exists():
             try:
                 import valhalla
                 with open(v_cfg, "r") as f:
@@ -38,7 +42,7 @@ class StreetMatrixProvider:
             except Exception:
                 self._valhalla_actor = None
 
-        if o_path and (Path(f"{o_path}.mldgr").exists() or Path(o_path).exists()):
+        if self._osrm_engine is None and o_path and (Path(f"{o_path}.mldgr").exists() or Path(o_path).exists()):
             try:
                 import osrm
                 self._osrm_engine = osrm.OSRM(
@@ -89,6 +93,10 @@ class StreetMatrixProvider:
         n = len(coords)
         if n == 0:
             return {"durations_sec": [], "distances_m": []}
+
+        # Ensure engines are initialized if environment variables became available
+        if self._valhalla_actor is None and self._osrm_engine is None:
+            self._init_engines()
 
         if self._valhalla_actor is not None:
             try:
@@ -192,22 +200,8 @@ def get_street_matrix(
 
     if is_gps:
         coords = [(n["x"], n["y"]) for n in nodes]
-        # Query provider or compute haversine pairs
-        for i in range(k):
-            lat_i, lng_i = coords[i]
-            for j in range(i + 1, k):
-                lat_j, lng_j = coords[j]
-                dur, dist = StreetMatrixProvider._compute_haversine_pair(
-                    lat_i, lng_i, lat_j, lng_j, tortuosity=winding_factor, speed_mps=speed_mps
-                )
-                durations_sec[i][j] = dur
-                durations_sec[j][i] = dur
-                distances_m[i][j] = dist
-                distances_m[j][i] = dist
-        return {
-            "durations_sec": durations_sec,
-            "distances_m": distances_m,
-        }
+        mat = _GLOBAL_PROVIDER.get_duration_distance_matrix(coords)
+        return mat
 
     # Planar meters calculation (preserves exact baseline benchmark behavior)
     for i in range(k):
