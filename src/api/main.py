@@ -29,6 +29,7 @@ class RouteSubstitutionPayload(BaseModel):
     speed_mps: float = Field(default=13.88)
 
 
+# [FUSION-HOOK]: GET /health -> Health check and routing engine platform capabilities
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -38,6 +39,7 @@ def health() -> dict[str, Any]:
     }
 
 
+# [FUSION-HOOK]: POST /api/v1/dispatch/evaluate -> Evaluate live multi-vehicle tournament dispatch with street matrix routing
 @app.post("/api/v1/dispatch/evaluate")
 def dispatch_evaluate(payload: EvaluateDispatchPayload) -> dict[str, Any]:
     t0 = time.perf_counter()
@@ -52,6 +54,7 @@ def dispatch_evaluate(payload: EvaluateDispatchPayload) -> dict[str, Any]:
     return res
 
 
+# [FUSION-HOOK]: POST /api/v1/dispatch/substitute -> Evaluate real-time route substitution and SLA breach mitigation
 @app.post("/api/v1/dispatch/substitute")
 def dispatch_substitute(payload: RouteSubstitutionPayload) -> dict[str, Any]:
     t0 = time.perf_counter()

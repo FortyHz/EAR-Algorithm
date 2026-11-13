@@ -934,6 +934,81 @@
           "Dest_A"
         ]
       }
+    },
+    {
+      "case_id": "CASE_13_MULTI_STOP_SHIPPER_MANIFEST",
+      "type": "MULTI_STOP_MANIFEST_REST",
+      "description": "Multi-pickup/multi-dropoff shipper manifest and corridor interleaving: 10t truck accepts 3-stop manifest (+4t A -> +3t B -> -7t C), confirms Pickup A (4t onboard, 6t remaining capacity), splices Shipper 2 (+2.5t / -2.5t along corridor, peak load 9.5t <= 10.0t), and verifies polyline route coordinates.",
+      "carrier": {
+        "vehicle_id": "truck_multi_01",
+        "capacity_max": 10.0,
+        "current_lat": 35.6500,
+        "current_lng": 51.4000,
+        "confirmed_onboard_load": 0.0,
+        "active_stops": []
+      },
+      "shipper_1_manifest": {
+        "load_id": "manifest_load_01",
+        "status": "OPEN",
+        "manifest_stops": [
+          {
+            "name": "Pickup_A",
+            "type": "PICKUP",
+            "lat": 35.6600,
+            "lng": 51.4100,
+            "weight_delta_tons": 4.0,
+            "latest_time_sec": 3600.0
+          },
+          {
+            "name": "Pickup_B",
+            "type": "PICKUP",
+            "lat": 35.6800,
+            "lng": 51.4300,
+            "weight_delta_tons": 3.0,
+            "latest_time_sec": 5400.0
+          },
+          {
+            "name": "Dropoff_C",
+            "type": "DROPOFF",
+            "lat": 35.7500,
+            "lng": 51.5000,
+            "weight_delta_tons": -7.0,
+            "latest_time_sec": 10000.0
+          }
+        ]
+      },
+      "shipper_2_load": {
+        "load_id": "load_shipper_02",
+        "origin_name": "Pickup_S2",
+        "dest_name": "Dropoff_S2",
+        "pickup_lat": 35.6900,
+        "pickup_lng": 51.4400,
+        "dropoff_lat": 35.7200,
+        "dropoff_lng": 51.4700,
+        "weight_tons": 2.5,
+        "pickup_latest_sec": 6000.0,
+        "dropoff_latest_sec": 8500.0,
+        "status": "OPEN"
+      },
+      "expected": {
+        "confirmed_onboard_after_pickup_A": 4.0,
+        "remaining_capacity_after_pickup_A": 6.0,
+        "shipper_2_insertion_mode": "MID_ROUTE_POOL",
+        "shipper_2_peak_onboard_load": 9.5,
+        "final_active_stops_order": [
+          "Pickup_B",
+          "Pickup_S2",
+          "Dropoff_S2",
+          "Dropoff_C"
+        ],
+        "final_projected_onboard_tons": [
+          7.0,
+          9.5,
+          7.0,
+          0.0
+        ],
+        "min_route_coordinates_points": 2
+      }
     }
   ]
 }

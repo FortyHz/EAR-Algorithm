@@ -438,6 +438,136 @@ def run_harness():
                 "error": fail_reason
             })
 
+        elif case_type == "MULTI_STOP_MANIFEST_REST":
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    from fastapi.testclient import TestClient
+                    from src.api.main import app
+                    client = TestClient(app)
+                except ImportError as e:
+                    print(json.dumps({"status": "ERROR", "reason": f"FastAPI app import failed: {str(e)}", "bench_hash": bench_hash}))
+                    sys.exit(1)
+
+            t0 = time.perf_counter()
+            case_ok = True
+            fail_reason = None
+
+            try:
+                # 1. Register 10.0t truck
+                carrier = case["carrier"]
+                r_reg = client.post("/api/v1/freight/carriers/register", json=carrier)
+                if r_reg.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Carrier registration failed with status {r_reg.status_code}"
+
+                # 2. Shipper 1 posts 3-stop manifest
+                s1_manifest = case["shipper_1_manifest"]
+                r_s1 = client.post("/api/v1/freight/loads", json=s1_manifest)
+                if r_s1.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Shipper 1 manifest creation failed with status {r_s1.status_code}"
+
+                # 3. Accept Shipper 1 manifest
+                r_acc1 = client.post(
+                    f"/api/v1/freight/loads/{s1_manifest['load_id']}/accept",
+                    json={"vehicle_id": carrier["vehicle_id"]},
+                )
+                if r_acc1.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Shipper 1 accept failed with status {r_acc1.status_code}"
+
+                # 4. Confirm Stop 0 (Pickup A)
+                r_conf1 = client.post(f"/api/v1/freight/carriers/{carrier['vehicle_id']}/stops/0/confirm")
+                conf1_data = r_conf1.json()
+                if r_conf1.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Pickup A confirm failed with status {r_conf1.status_code}"
+                elif conf1_data.get("confirmed_onboard_load") != case["expected"]["confirmed_onboard_after_pickup_A"]:
+                    case_ok = False
+                    fail_reason = f"Expected confirmed_onboard_load={case['expected']['confirmed_onboard_after_pickup_A']}, got {conf1_data.get('confirmed_onboard_load')}"
+
+                # Check carrier state
+                r_state = client.get(f"/api/v1/freight/carriers/{carrier['vehicle_id']}/state")
+                state_data = r_state.json()
+                if r_state.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Carrier state check failed with status {r_state.status_code}"
+                elif state_data.get("remaining_capacity_tons") != case["expected"]["remaining_capacity_after_pickup_A"]:
+                    case_ok = False
+                    fail_reason = f"Expected remaining_capacity_tons={case['expected']['remaining_capacity_after_pickup_A']}, got {state_data.get('remaining_capacity_tons')}"
+                elif len(state_data.get("route_coordinates", [])) < case["expected"]["min_route_coordinates_points"]:
+                    case_ok = False
+                    fail_reason = f"State route_coordinates points {len(state_data.get('route_coordinates', []))} < {case['expected']['min_route_coordinates_points']}"
+
+                # 5. Shipper 2 posts 2.5t load along corridor
+                s2_load = case["shipper_2_load"]
+                r_s2 = client.post("/api/v1/freight/loads", json=s2_load)
+                if r_s2.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Shipper 2 load creation failed with status {r_s2.status_code}"
+
+                # 6. Verify Shipper 2 in mid_route_pool_offers
+                r_off = client.get(f"/api/v1/freight/carriers/{carrier['vehicle_id']}/offers")
+                off_data = r_off.json()
+                pool_offers = off_data.get("mid_route_pool_offers", [])
+                matching_s2 = [o for o in pool_offers if o.get("load_id") == s2_load["load_id"]]
+                if len(matching_s2) != 1:
+                    case_ok = False
+                    fail_reason = f"Expected 1 matching offer for Shipper 2 in mid_route_pool_offers, got {len(matching_s2)}"
+                elif matching_s2[0].get("insertion_mode") != case["expected"]["shipper_2_insertion_mode"]:
+                    case_ok = False
+                    fail_reason = f"Expected insertion_mode={case['expected']['shipper_2_insertion_mode']}, got {matching_s2[0].get('insertion_mode')}"
+                elif matching_s2[0].get("peak_onboard_load") != case["expected"]["shipper_2_peak_onboard_load"]:
+                    case_ok = False
+                    fail_reason = f"Expected peak_onboard_load={case['expected']['shipper_2_peak_onboard_load']}, got {matching_s2[0].get('peak_onboard_load')}"
+                elif len(matching_s2[0].get("route_coordinates", [])) < case["expected"]["min_route_coordinates_points"]:
+                    case_ok = False
+                    fail_reason = f"Offer route_coordinates points {len(matching_s2[0].get('route_coordinates', []))} < {case['expected']['min_route_coordinates_points']}"
+
+                # 7. Accept Shipper 2 load and verify spliced active_stops + projected onboard loads + route coordinates
+                r_acc2 = client.post(
+                    f"/api/v1/freight/loads/{s2_load['load_id']}/accept",
+                    json={"vehicle_id": carrier["vehicle_id"]},
+                )
+                acc2_data = r_acc2.json()
+                if r_acc2.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Shipper 2 accept failed with status {r_acc2.status_code}"
+                else:
+                    final_stops = acc2_data.get("active_stops", [])
+                    stop_names = [s.get("name") for s in final_stops]
+                    if stop_names != case["expected"]["final_active_stops_order"]:
+                        case_ok = False
+                        fail_reason = f"Expected final active_stops {case['expected']['final_active_stops_order']}, got {stop_names}"
+                    projected_loads = [s.get("projected_onboard_tons") for s in final_stops]
+                    if projected_loads != case["expected"]["final_projected_onboard_tons"]:
+                        case_ok = False
+                        fail_reason = f"Expected projected_onboard_tons {case['expected']['final_projected_onboard_tons']}, got {projected_loads}"
+                    if len(acc2_data.get("route_coordinates", [])) < case["expected"]["min_route_coordinates_points"]:
+                        case_ok = False
+                        fail_reason = f"Accept route_coordinates points {len(acc2_data.get('route_coordinates', []))} < {case['expected']['min_route_coordinates_points']}"
+
+            except Exception as e:
+                case_ok = False
+                fail_reason = f"Execution error in MULTI_STOP_MANIFEST_REST: {str(e)}"
+
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": None,
+                "error": fail_reason
+            })
+
         else:
             t0 = time.perf_counter()
             try:

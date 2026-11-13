@@ -1,3 +1,4 @@
+import itertools
 import math
 
 
@@ -46,42 +47,76 @@ def evaluate_request_insertion(
     if n_stops > 0:
         traj_x = stops[-1]["x"] - vehicle["current_x"]
         traj_y = stops[-1]["y"] - vehicle["current_y"]
-    else:
+    elif "manifest_stops" in request and request["manifest_stops"]:
+        first_s = request["manifest_stops"][0]
+        last_s = request["manifest_stops"][-1]
+        traj_x = float(last_s.get("lat") if "lat" in last_s else last_s.get("x", 0.0)) - float(first_s.get("lat") if "lat" in first_s else first_s.get("x", 0.0))
+        traj_y = float(last_s.get("lng") if "lng" in last_s else last_s.get("y", 0.0)) - float(first_s.get("lng") if "lng" in first_s else first_s.get("y", 0.0))
+    elif "pickup" in request and "dropoff" in request:
         traj_x = request["dropoff"]["x"] - request["pickup"]["x"]
         traj_y = request["dropoff"]["y"] - request["pickup"]["y"]
+    else:
+        traj_x = 0.0
+        traj_y = 0.0
 
-    p_stop = {
-        "name": request["pickup"]["name"],
-        "x": request["pickup"]["x"],
-        "y": request["pickup"]["y"],
-        "is_pickup": True,
-        "load_change": request["load"],
-        "latest_time_sec": request["pickup"]["latest_time_sec"],
-    }
-    if "matrix_node_index" in request["pickup"]:
-        p_stop["matrix_node_index"] = request["pickup"]["matrix_node_index"]
-    if "request_id" in request["pickup"]:
-        p_stop["request_id"] = request["pickup"]["request_id"]
-    elif "id" in request:
-        p_stop["request_id"] = request["id"]
+    if "manifest_stops" in request:
+        manifest = request["manifest_stops"]
+        new_stops = []
+        for s in manifest:
+            is_p = (s.get("type", "").upper() == "PICKUP") if "type" in s else s.get("is_pickup", True)
+            w = s.get("weight_delta_tons")
+            if w is not None:
+                l_change = abs(float(w)) if is_p else -abs(float(w))
+            else:
+                l_change = float(s.get("load_change", 0.0))
 
-    d_stop = {
-        "name": request["dropoff"]["name"],
-        "x": request["dropoff"]["x"],
-        "y": request["dropoff"]["y"],
-        "is_pickup": False,
-        "load_change": -request["load"],
-        "latest_time_sec": request["dropoff"]["latest_time_sec"],
-    }
-    if "matrix_node_index" in request["dropoff"]:
-        d_stop["matrix_node_index"] = request["dropoff"]["matrix_node_index"]
-    if "request_id" in request["dropoff"]:
-        d_stop["request_id"] = request["dropoff"]["request_id"]
-    elif "id" in request:
-        d_stop["request_id"] = request["id"]
+            stop_obj = {
+                "name": s.get("name", "stop"),
+                "x": float(s.get("lat") if "lat" in s else s.get("x", 0.0)),
+                "y": float(s.get("lng") if "lng" in s else s.get("y", 0.0)),
+                "is_pickup": is_p,
+                "load_change": l_change,
+                "latest_time_sec": float(s.get("latest_time_sec", 86400.0)),
+                "request_id": request.get("id"),
+            }
+            if "matrix_node_index" in s:
+                stop_obj["matrix_node_index"] = s["matrix_node_index"]
+            new_stops.append(stop_obj)
+    else:
+        p_stop = {
+            "name": request["pickup"]["name"],
+            "x": request["pickup"]["x"],
+            "y": request["pickup"]["y"],
+            "is_pickup": True,
+            "load_change": request["load"],
+            "latest_time_sec": request["pickup"]["latest_time_sec"],
+        }
+        if "matrix_node_index" in request["pickup"]:
+            p_stop["matrix_node_index"] = request["pickup"]["matrix_node_index"]
+        if "request_id" in request["pickup"]:
+            p_stop["request_id"] = request["pickup"]["request_id"]
+        elif "id" in request:
+            p_stop["request_id"] = request["id"]
 
-    best_i = None
-    best_j = None
+        d_stop = {
+            "name": request["dropoff"]["name"],
+            "x": request["dropoff"]["x"],
+            "y": request["dropoff"]["y"],
+            "is_pickup": False,
+            "load_change": -request["load"],
+            "latest_time_sec": request["dropoff"]["latest_time_sec"],
+        }
+        if "matrix_node_index" in request["dropoff"]:
+            d_stop["matrix_node_index"] = request["dropoff"]["matrix_node_index"]
+        if "request_id" in request["dropoff"]:
+            d_stop["request_id"] = request["dropoff"]["request_id"]
+        elif "id" in request:
+            d_stop["request_id"] = request["id"]
+
+        new_stops = [p_stop, d_stop]
+
+    m_count = len(new_stops)
+    best_indices = None
     best_cost = float("inf")
     best_candidate = None
 
@@ -89,62 +124,62 @@ def evaluate_request_insertion(
     if initial_load > vehicle["capacity_max"]:
         return {"feasible": False}
 
-    # Iterate over all valid insertion index pairs (i, j) where 0 <= i <= N and i <= j <= N
-    for i in range(n_stops + 1):
-        for j in range(i, n_stops + 1):
-            if i == j:
-                candidate = stops[:i] + [p_stop, d_stop] + stops[i:]
+    for indices in itertools.combinations_with_replacement(range(n_stops + 1), m_count):
+        candidate = []
+        prev_k = 0
+        for m, curr_k in enumerate(indices):
+            candidate.extend(stops[prev_k:curr_k])
+            candidate.append(new_stops[m])
+            prev_k = curr_k
+        candidate.extend(stops[prev_k:])
+
+        prev_node = origin_node
+        running_load = initial_load
+        candidate_dist_m = 0.0
+        candidate_duration_sec = 0.0
+        feasible = True
+
+        for stop in candidate:
+            dx = stop["x"] - prev_node["x"]
+            dy = stop["y"] - prev_node["y"]
+
+            # Enforce directional corridor alignment when street_matrix is not supplied
+            if not street_matrix and (dx * traj_x + dy * traj_y) < 0:
+                feasible = False
+                break
+
+            running_load += stop["load_change"]
+            if running_load > vehicle["capacity_max"]:
+                feasible = False
+                break
+
+            leg_d, leg_t = _get_leg_metric(prev_node, stop, speed_mps, street_matrix)
+            candidate_dist_m += leg_d
+            candidate_duration_sec += leg_t
+
+            if candidate_duration_sec > stop["latest_time_sec"]:
+                feasible = False
+                break
+
+            prev_node = stop
+
+        if feasible:
+            delta_time = candidate_duration_sec - baseline_duration_sec
+            delta_dist_km = (candidate_dist_m - baseline_dist_m) / 1000.0
+
+            if platform == "TRIPPY_POOL":
+                marginal_cost = 0.15 * delta_dist_km + 0.85 * delta_time
+            elif platform == "ENTROPIC_FREIGHT":
+                marginal_cost = 0.65 * delta_dist_km + 0.25 * delta_time
             else:
-                candidate = stops[:i] + [p_stop] + stops[i:j] + [d_stop] + stops[j:]
+                marginal_cost = delta_time
 
-            prev_node = origin_node
-            running_load = initial_load
-            candidate_dist_m = 0.0
-            candidate_duration_sec = 0.0
-            feasible = True
+            if marginal_cost < best_cost:
+                best_cost = marginal_cost
+                best_indices = indices
+                best_candidate = candidate
 
-            for stop in candidate:
-                dx = stop["x"] - prev_node["x"]
-                dy = stop["y"] - prev_node["y"]
-
-                # Enforce directional corridor alignment when street_matrix is not supplied
-                if not street_matrix and (dx * traj_x + dy * traj_y) < 0:
-                    feasible = False
-                    break
-
-                running_load += stop["load_change"]
-                if running_load > vehicle["capacity_max"]:
-                    feasible = False
-                    break
-
-                leg_d, leg_t = _get_leg_metric(prev_node, stop, speed_mps, street_matrix)
-                candidate_dist_m += leg_d
-                candidate_duration_sec += leg_t
-
-                if candidate_duration_sec > stop["latest_time_sec"]:
-                    feasible = False
-                    break
-
-                prev_node = stop
-
-            if feasible:
-                delta_time = candidate_duration_sec - baseline_duration_sec
-                delta_dist_km = (candidate_dist_m - baseline_dist_m) / 1000.0
-
-                if platform == "TRIPPY_POOL":
-                    marginal_cost = 0.15 * delta_dist_km + 0.85 * delta_time
-                elif platform == "ENTROPIC_FREIGHT":
-                    marginal_cost = 0.65 * delta_dist_km + 0.25 * delta_time
-                else:
-                    marginal_cost = delta_time
-
-                if marginal_cost < best_cost:
-                    best_cost = marginal_cost
-                    best_i = i
-                    best_j = j
-                    best_candidate = candidate
-
-    if best_i is None:
+    if best_indices is None:
         return {"feasible": False}
 
     updated_stops = []
@@ -158,6 +193,7 @@ def evaluate_request_insertion(
         new_stop = dict(stop)
         new_stop["eta_sec"] = round(cum_time, 2)
         new_stop["projected_load_after"] = round(curr_load, 2)
+        new_stop["projected_onboard_tons"] = round(curr_load, 2)
         updated_stops.append(new_stop)
         prev_node = stop
 
@@ -168,20 +204,23 @@ def evaluate_request_insertion(
         f"peak_onboard_load {peak_onboard_load} exceeds capacity {vehicle['capacity_max']}"
     )
 
-    # Insertion mode classification:
-    # "MID_ROUTE_POOL" if the new pickup is inserted before at least one existing dropoff stop
-    # (meaning it shares current vehicle capacity), or "NEXT_LEG_BACKHAUL" if the new pickup
-    # occurs after all existing dropoffs (starting only after the vehicle empties).
+    first_pickup_k = best_indices[0]
+    for m, s in enumerate(new_stops):
+        if s.get("is_pickup"):
+            first_pickup_k = best_indices[m]
+            break
+
     has_downstream_dropoff = any(
         (s.get("is_pickup") is False or s.get("load_change", 0) < 0)
-        for s in stops[best_i:]
+        for s in stops[first_pickup_k:]
     )
     insertion_mode = "MID_ROUTE_POOL" if has_downstream_dropoff else "NEXT_LEG_BACKHAUL"
 
     return {
         "feasible": True,
-        "insert_pickup_index": best_i,
-        "insert_dropoff_index": best_j,
+        "insert_pickup_index": best_indices[0],
+        "insert_dropoff_index": best_indices[-1],
+        "insert_indices": list(best_indices),
         "marginal_cost": best_cost,
         "max_slack_violation_sec": 0.0,
         "updated_stops": updated_stops,

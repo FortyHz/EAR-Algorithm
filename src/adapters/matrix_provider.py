@@ -6,6 +6,38 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 
+def decode_polyline6(encoded: str) -> List[List[float]]:
+    """Decodes a Google/Valhalla 6-decimal encoded polyline into [[lat, lng], ...]."""
+    coordinates = []
+    index, lat, lng = 0, 0, 0
+    length = len(encoded)
+    while index < length:
+        b, shift, result = 0, 0, 0
+        while True:
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlat = ~(result >> 1) if (result & 1) else (result >> 1)
+        lat += dlat
+
+        shift, result = 0, 0
+        while True:
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlng = ~(result >> 1) if (result & 1) else (result >> 1)
+        lng += dlng
+
+        coordinates.append([round(lat * 1e-6, 6), round(lng * 1e-6, 6)])
+    return coordinates
+
+
 class StreetMatrixProvider:
     """
     High-throughput street network time-distance matrix provider.
@@ -155,9 +187,83 @@ class StreetMatrixProvider:
             "distances_m": distances,
         }
 
+    def get_route_polyline(self, waypoints: list) -> List[List[float]]:
+        """
+        Returns route_coordinates: [[lat, lng], ...] along the waypoints.
+        Uses in-process Valhalla road shape when configured, or clean interpolated
+        road waypoints fallback when offline.
+        """
+        if not waypoints:
+            return []
+
+        coords: List[Tuple[float, float]] = []
+        for wp in waypoints:
+            if isinstance(wp, (list, tuple)):
+                coords.append((float(wp[0]), float(wp[1])))
+            elif isinstance(wp, dict):
+                lat = wp.get("lat") if "lat" in wp else wp.get("x", 0.0)
+                lng = wp.get("lng") if "lng" in wp else wp.get("y", 0.0)
+                coords.append((float(lat), float(lng)))
+
+        if len(coords) <= 1:
+            return [[round(c[0], 6), round(c[1], 6)] for c in coords]
+
+        # Ensure engines are initialized
+        if self._valhalla_actor is None and self._osrm_engine is None:
+            self._init_engines()
+
+        # Tier 1: In-process Valhalla actor if available
+        if self._valhalla_actor is not None:
+            try:
+                locs = [{"lat": lat, "lon": lng} for lat, lng in coords]
+                res = self._valhalla_actor.route({
+                    "locations": locs,
+                    "costing": "auto",
+                })
+                trip = res.get("trip", {})
+                legs = trip.get("legs", [])
+                full_shape = []
+                for leg in legs:
+                    shape_enc = leg.get("shape")
+                    if shape_enc:
+                        pts = decode_polyline6(shape_enc)
+                        if full_shape and pts and full_shape[-1] == pts[0]:
+                            full_shape.extend(pts[1:])
+                        else:
+                            full_shape.extend(pts)
+                if full_shape:
+                    return full_shape
+            except Exception:
+                pass
+
+        # Tier 3: Clean interpolated road waypoints fallback
+        interpolated: List[List[float]] = []
+        for i in range(len(coords) - 1):
+            lat1, lng1 = coords[i]
+            lat2, lng2 = coords[i + 1]
+            dur_sec, dist_m = self._compute_haversine_pair(lat1, lng1, lat2, lng2, self.DEFAULT_TORTUOSITY)
+            steps = max(2, int(math.ceil(dist_m / 1000.0)))
+            for s in range(steps):
+                f = s / float(steps)
+                ilat = round(lat1 + f * (lat2 - lat1), 6)
+                ilng = round(lng1 + f * (lng2 - lng1), 6)
+                if not interpolated or interpolated[-1] != [ilat, ilng]:
+                    interpolated.append([ilat, ilng])
+
+        last_pt = [round(coords[-1][0], 6), round(coords[-1][1], 6)]
+        if not interpolated or interpolated[-1] != last_pt:
+            interpolated.append(last_pt)
+
+        return interpolated
+
 
 # Global singleton provider instance for high-speed queries
 _GLOBAL_PROVIDER = StreetMatrixProvider()
+
+
+def get_route_polyline(waypoints: list) -> List[List[float]]:
+    """Global helper returning route_coordinates: [[lat, lng], ...] for waypoints."""
+    return _GLOBAL_PROVIDER.get_route_polyline(waypoints)
 
 
 def get_street_matrix(

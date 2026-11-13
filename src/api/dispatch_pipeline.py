@@ -26,8 +26,16 @@ def process_live_dispatch(
         spatial_index.index_vehicle(veh["id"], coords, platform)
 
     # Step 2: Filter candidate vehicle IDs near pickup
-    px = request["pickup"]["x"]
-    py = request["pickup"]["y"]
+    if "manifest_stops" in request and request["manifest_stops"]:
+        p_first = next(
+            (s for s in request["manifest_stops"] if (s.get("type", "").upper() == "PICKUP" or s.get("is_pickup"))),
+            request["manifest_stops"][0],
+        )
+        px = float(p_first.get("lat") if "lat" in p_first else p_first.get("x", 0.0))
+        py = float(p_first.get("lng") if "lng" in p_first else p_first.get("y", 0.0))
+    else:
+        px = request["pickup"]["x"]
+        py = request["pickup"]["y"]
     filtered_ids = set(spatial_index.query_candidates((px, py), platform, radius_m=3500.0))
 
     candidate_vehicles = [copy.deepcopy(v) for v in fleet if v["id"] in filtered_ids]
@@ -45,10 +53,18 @@ def process_live_dispatch(
         for s in veh["stops"]:
             all_nodes.append(s)
 
-        p_node = req_copy["pickup"]
-        d_node = req_copy["dropoff"]
-        all_nodes.append(p_node)
-        all_nodes.append(d_node)
+        if "manifest_stops" in req_copy and req_copy["manifest_stops"]:
+            for s in req_copy["manifest_stops"]:
+                if "lat" in s and "x" not in s:
+                    s["x"] = s["lat"]
+                if "lng" in s and "y" not in s:
+                    s["y"] = s["lng"]
+                all_nodes.append(s)
+        else:
+            p_node = req_copy["pickup"]
+            d_node = req_copy["dropoff"]
+            all_nodes.append(p_node)
+            all_nodes.append(d_node)
 
         # Generate matrix and bind matrix_node_index to nodes
         matrix = get_street_matrix(all_nodes, speed_mps=speed_mps)
