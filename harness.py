@@ -211,6 +211,50 @@ def run_harness():
                 "error": fail_reason
             })
 
+        elif case_type == "MID_ROUTE_LOAD_CHECK":
+            t0 = time.perf_counter()
+            case_ok = True
+            fail_reason = None
+            feasible_res = {}
+            try:
+                heavy_res = evaluate_request_insertion(case["vehicle"], case["heavy_request"], case["platform"], speed_mps)
+                feasible_res = evaluate_request_insertion(case["vehicle"], case["feasible_request"], case["platform"], speed_mps)
+
+                if heavy_res.get("feasible") is not False:
+                    case_ok = False
+                    fail_reason = f"Expected heavy_request feasible=False, got {heavy_res.get('feasible')}"
+                elif feasible_res.get("feasible") is not True:
+                    case_ok = False
+                    fail_reason = f"Expected feasible_request feasible=True, got {feasible_res.get('feasible')}"
+                else:
+                    updated_stops = feasible_res.get("updated_stops", [])
+                    stop_names = [s.get("name") for s in updated_stops]
+                    expected_order = case["expected"].get("expected_stops_order", ["P_new", "D_new", "D1"])
+                    if stop_names != expected_order:
+                        case_ok = False
+                        fail_reason = f"Expected updated_stops order {expected_order}, got {stop_names}"
+                    else:
+                        total_cost += float(feasible_res.get("marginal_cost", 0.0))
+            except Exception as e:
+                case_ok = False
+                fail_reason = f"Execution error in MID_ROUTE_LOAD_CHECK: {str(e)}"
+
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": round(float(feasible_res.get("marginal_cost", 0.0)), 3) if case_ok else None,
+                "error": fail_reason
+            })
+
         elif case_type == "REST_API_CONTRACT":
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")

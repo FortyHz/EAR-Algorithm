@@ -807,6 +807,70 @@
         "substitute_status": 200,
         "action": "SWAPPED_DISJOINT_CORRIDOR"
       }
+    },
+    {
+      "case_id": "CASE_11_MID_ROUTE_ONBOARD_LOAD_CAP",
+      "type": "MID_ROUTE_LOAD_CHECK",
+      "description": "Vehicle in transit with confirmed onboard load (current_load: 7.5 / capacity_max: 10.0). Heavy request (load: 3.0) must be rejected due to capacity breach (10.5 > 10.0). Feasible request (load: 2.0) is accepted, returning updated_stops in order [P_new, D_new, D1].",
+      "platform": "ENTROPIC_FREIGHT",
+      "vehicle": {
+        "id": "veh_11_in_transit",
+        "capacity_max": 10.0,
+        "current_load": 7.5,
+        "current_x": 2000.0,
+        "current_y": 0.0,
+        "stops": [
+          {
+            "name": "D1",
+            "x": 8000.0,
+            "y": 0.0,
+            "is_pickup": false,
+            "load_change": -7.5,
+            "latest_time_sec": 3600.0
+          }
+        ]
+      },
+      "heavy_request": {
+        "id": "heavy_request",
+        "load": 3.0,
+        "pickup": {
+          "name": "P_heavy",
+          "x": 3000.0,
+          "y": 100.0,
+          "latest_time_sec": 3000.0
+        },
+        "dropoff": {
+          "name": "D_heavy",
+          "x": 6000.0,
+          "y": 100.0,
+          "latest_time_sec": 3000.0
+        }
+      },
+      "feasible_request": {
+        "id": "feasible_request",
+        "load": 2.0,
+        "pickup": {
+          "name": "P_new",
+          "x": 3000.0,
+          "y": 100.0,
+          "latest_time_sec": 3000.0
+        },
+        "dropoff": {
+          "name": "D_new",
+          "x": 6000.0,
+          "y": 100.0,
+          "latest_time_sec": 3000.0
+        }
+      },
+      "expected": {
+        "heavy_feasible": false,
+        "feasible_feasible": true,
+        "expected_stops_order": [
+          "P_new",
+          "D_new",
+          "D1"
+        ]
+      }
     }
   ]
 }

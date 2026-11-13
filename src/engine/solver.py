@@ -75,6 +75,11 @@ def evaluate_request_insertion(
     best_i = None
     best_j = None
     best_cost = float("inf")
+    best_candidate = None
+
+    initial_load = float(vehicle.get("current_load", 0.0))
+    if initial_load > vehicle["capacity_max"]:
+        return {"feasible": False}
 
     # Iterate over all valid insertion index pairs (i, j) where 0 <= i <= N and i <= j <= N
     for i in range(n_stops + 1):
@@ -85,7 +90,7 @@ def evaluate_request_insertion(
                 candidate = stops[:i] + [p_stop] + stops[i:j] + [d_stop] + stops[j:]
 
             prev_node = origin_node
-            running_load = 0
+            running_load = initial_load
             candidate_dist_m = 0.0
             candidate_duration_sec = 0.0
             feasible = True
@@ -129,9 +134,24 @@ def evaluate_request_insertion(
                     best_cost = marginal_cost
                     best_i = i
                     best_j = j
+                    best_candidate = candidate
 
     if best_i is None:
         return {"feasible": False}
+
+    updated_stops = []
+    prev_node = origin_node
+    cum_time = 0.0
+    curr_load = initial_load
+    for stop in best_candidate:
+        d_m, t_sec = _get_leg_metric(prev_node, stop, speed_mps, street_matrix)
+        cum_time += t_sec
+        curr_load += stop["load_change"]
+        new_stop = dict(stop)
+        new_stop["eta_sec"] = round(cum_time, 2)
+        new_stop["projected_load_after"] = round(curr_load, 2)
+        updated_stops.append(new_stop)
+        prev_node = stop
 
     return {
         "feasible": True,
@@ -139,6 +159,7 @@ def evaluate_request_insertion(
         "insert_dropoff_index": best_j,
         "marginal_cost": best_cost,
         "max_slack_violation_sec": 0.0,
+        "updated_stops": updated_stops,
     }
 
 
@@ -238,6 +259,7 @@ def dispatch_request_to_fleet(
                 "marginal_cost": res["marginal_cost"],
                 "insert_pickup_index": res["insert_pickup_index"],
                 "insert_dropoff_index": res["insert_dropoff_index"],
+                "updated_stops": res.get("updated_stops", []),
             })
 
     eligible.sort(key=lambda x: x["marginal_cost"])
