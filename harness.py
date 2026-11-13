@@ -317,6 +317,127 @@ def run_harness():
                 "error": fail_reason
             })
 
+        elif case_type == "FREIGHT_LIFECYCLE_REST":
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    from fastapi.testclient import TestClient
+                    from src.api.main import app
+                    client = TestClient(app)
+                except ImportError as e:
+                    print(json.dumps({"status": "ERROR", "reason": f"FastAPI app import failed: {str(e)}", "bench_hash": bench_hash}))
+                    sys.exit(1)
+
+            t0 = time.perf_counter()
+            case_ok = True
+            fail_reason = None
+
+            try:
+                # 1. Register 10.0t truck
+                carrier = case["carrier"]
+                r_reg = client.post("/api/v1/freight/carriers/register", json=carrier)
+                if r_reg.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Carrier register failed with status {r_reg.status_code}"
+
+                # 2. Post 8.0t Load A
+                load_a = case["load_A"]
+                r_la = client.post("/api/v1/freight/loads", json=load_a)
+                if r_la.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Load A creation failed with status {r_la.status_code}"
+
+                # 3. Accept Load A
+                r_acc_a = client.post(f"/api/v1/freight/loads/{load_a['load_id']}/accept", json={"vehicle_id": carrier["vehicle_id"]})
+                if r_acc_a.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Load A accept failed with status {r_acc_a.status_code}"
+
+                # 4. Confirm Stop 0 (Pickup) -> assert confirmed_onboard_load == 8.0
+                r_conf_a = client.post(f"/api/v1/freight/carriers/{carrier['vehicle_id']}/stops/0/confirm")
+                conf_a_data = r_conf_a.json()
+                if r_conf_a.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Confirm Stop 0 failed with status {r_conf_a.status_code}"
+                elif conf_a_data.get("confirmed_onboard_load") != case["expected"]["confirmed_onboard_after_pickup_A"]:
+                    case_ok = False
+                    fail_reason = f"Expected confirmed_onboard_load={case['expected']['confirmed_onboard_after_pickup_A']}, got {conf_a_data.get('confirmed_onboard_load')}"
+
+                # 5. Post 6.0t Load B (tight deadline requiring mid-route pickup)
+                load_b = case["load_B"]
+                r_lb = client.post("/api/v1/freight/loads", json=load_b)
+                if r_lb.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Load B creation failed with status {r_lb.status_code}"
+
+                # 6. Assert Load B is REJECTED from mid_route_pool_offers
+                r_off_b = client.get(f"/api/v1/freight/carriers/{carrier['vehicle_id']}/offers")
+                off_b_data = r_off_b.json()
+                mid_pool_b = off_b_data.get("mid_route_pool_offers", [])
+                if any(o.get("load_id") == load_b["load_id"] for o in mid_pool_b):
+                    case_ok = False
+                    fail_reason = f"Load B {load_b['load_id']} was unexpectedly present in mid_route_pool_offers"
+
+                # 7. Assert returns HTTP 409 if forced
+                r_force_b = client.post(f"/api/v1/freight/loads/{load_b['load_id']}/accept", json={"vehicle_id": carrier["vehicle_id"]})
+                if r_force_b.status_code != case["expected"]["load_B_force_status"]:
+                    case_ok = False
+                    fail_reason = f"Expected forced Load B accept to return {case['expected']['load_B_force_status']}, got {r_force_b.status_code}"
+
+                # 8. Post 1.5t Load C along the route
+                load_c = case["load_C"]
+                r_lc = client.post("/api/v1/freight/loads", json=load_c)
+                if r_lc.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Load C creation failed with status {r_lc.status_code}"
+
+                # 9. Assert Load C appears in mid_route_pool_offers with "insertion_mode": "MID_ROUTE_POOL"
+                r_off_c = client.get(f"/api/v1/freight/carriers/{carrier['vehicle_id']}/offers")
+                off_c_data = r_off_c.json()
+                mid_pool_c = [o for o in off_c_data.get("mid_route_pool_offers", []) if o.get("load_id") == load_c["load_id"]]
+                if len(mid_pool_c) != 1:
+                    case_ok = False
+                    fail_reason = f"Expected Load C in mid_route_pool_offers, found {len(mid_pool_c)}"
+                elif mid_pool_c[0].get("insertion_mode") != case["expected"]["load_C_insertion_mode"]:
+                    case_ok = False
+                    fail_reason = f"Expected Load C insertion_mode={case['expected']['load_C_insertion_mode']}, got {mid_pool_c[0].get('insertion_mode')}"
+                elif mid_pool_c[0].get("peak_onboard_load") != case["expected"]["load_C_peak_onboard_load"]:
+                    case_ok = False
+                    fail_reason = f"Expected Load C peak_onboard_load={case['expected']['load_C_peak_onboard_load']}, got {mid_pool_c[0].get('peak_onboard_load')}"
+
+                # 10. Accept Load C, assert active_stops updates cleanly
+                r_acc_c = client.post(f"/api/v1/freight/loads/{load_c['load_id']}/accept", json={"vehicle_id": carrier["vehicle_id"]})
+                acc_c_data = r_acc_c.json()
+                if r_acc_c.status_code != 200:
+                    case_ok = False
+                    fail_reason = f"Load C accept failed with status {r_acc_c.status_code}"
+                else:
+                    active_stops = acc_c_data.get("active_stops", [])
+                    stop_names = [s.get("name") for s in active_stops]
+                    if stop_names != case["expected"]["final_active_stops_order"]:
+                        case_ok = False
+                        fail_reason = f"Expected final active_stops {case['expected']['final_active_stops_order']}, got {stop_names}"
+
+            except Exception as e:
+                case_ok = False
+                fail_reason = f"Execution error in FREIGHT_LIFECYCLE_REST: {str(e)}"
+
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+            if case_ok:
+                passed += 1
+            else:
+                failed += 1
+
+            case_reports.append({
+                "case_id": case["case_id"],
+                "passed": case_ok,
+                "latency_ms": round(elapsed_ms, 4),
+                "marginal_cost": None,
+                "error": fail_reason
+            })
+
         else:
             t0 = time.perf_counter()
             try:

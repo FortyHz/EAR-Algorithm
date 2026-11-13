@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from src.api.dispatch_pipeline import process_live_dispatch
+from src.api.freight_lifecycle import router as freight_router
 from src.engine.solver import evaluate_route_substitution
 
 app = FastAPI(
@@ -11,6 +12,7 @@ app = FastAPI(
     version="1.0.0",
     description="Stateful Dynamic Multi-Point Routing & Sub-Second Substitution Engine (DPDPTW - ARCH-SPEC-004)",
 )
+app.include_router(freight_router)
 
 
 class EvaluateDispatchPayload(BaseModel):

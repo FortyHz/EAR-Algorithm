@@ -60,6 +60,10 @@ def evaluate_request_insertion(
     }
     if "matrix_node_index" in request["pickup"]:
         p_stop["matrix_node_index"] = request["pickup"]["matrix_node_index"]
+    if "request_id" in request["pickup"]:
+        p_stop["request_id"] = request["pickup"]["request_id"]
+    elif "id" in request:
+        p_stop["request_id"] = request["id"]
 
     d_stop = {
         "name": request["dropoff"]["name"],
@@ -71,6 +75,10 @@ def evaluate_request_insertion(
     }
     if "matrix_node_index" in request["dropoff"]:
         d_stop["matrix_node_index"] = request["dropoff"]["matrix_node_index"]
+    if "request_id" in request["dropoff"]:
+        d_stop["request_id"] = request["dropoff"]["request_id"]
+    elif "id" in request:
+        d_stop["request_id"] = request["id"]
 
     best_i = None
     best_j = None
@@ -153,6 +161,23 @@ def evaluate_request_insertion(
         updated_stops.append(new_stop)
         prev_node = stop
 
+    # Peak onboard load across updated_stops sequence
+    running_loads = [s["projected_load_after"] for s in updated_stops]
+    peak_onboard_load = max(running_loads) if running_loads else initial_load
+    assert peak_onboard_load <= vehicle["capacity_max"] + 1e-6, (
+        f"peak_onboard_load {peak_onboard_load} exceeds capacity {vehicle['capacity_max']}"
+    )
+
+    # Insertion mode classification:
+    # "MID_ROUTE_POOL" if the new pickup is inserted before at least one existing dropoff stop
+    # (meaning it shares current vehicle capacity), or "NEXT_LEG_BACKHAUL" if the new pickup
+    # occurs after all existing dropoffs (starting only after the vehicle empties).
+    has_downstream_dropoff = any(
+        (s.get("is_pickup") is False or s.get("load_change", 0) < 0)
+        for s in stops[best_i:]
+    )
+    insertion_mode = "MID_ROUTE_POOL" if has_downstream_dropoff else "NEXT_LEG_BACKHAUL"
+
     return {
         "feasible": True,
         "insert_pickup_index": best_i,
@@ -160,6 +185,8 @@ def evaluate_request_insertion(
         "marginal_cost": best_cost,
         "max_slack_violation_sec": 0.0,
         "updated_stops": updated_stops,
+        "insertion_mode": insertion_mode,
+        "peak_onboard_load": round(peak_onboard_load, 2),
     }
 
 
@@ -260,6 +287,8 @@ def dispatch_request_to_fleet(
                 "insert_pickup_index": res["insert_pickup_index"],
                 "insert_dropoff_index": res["insert_dropoff_index"],
                 "updated_stops": res.get("updated_stops", []),
+                "insertion_mode": res.get("insertion_mode"),
+                "peak_onboard_load": res.get("peak_onboard_load"),
             })
 
     eligible.sort(key=lambda x: x["marginal_cost"])
