@@ -179,8 +179,31 @@ def create_load(payload: CreateLoadPayload) -> dict[str, Any]:
         first_p = pickup_stops[0] if pickup_stops else manifest_stops[0]
         last_d = dropoff_stops[-1] if dropoff_stops else manifest_stops[-1]
 
-        origin_name = payload.origin_name or first_p.get("name", "Origin")
-        dest_name = payload.dest_name or last_d.get("name", "Dest")
+        for s in manifest_stops:
+            s_n = s.get("name") or s.get("label") or "stop"
+            s["name"] = s_n
+            s["label"] = s.get("label") or s_n
+            s["stop_id"] = s.get("stop_id") or s_n
+            is_p = (s.get("type", "").upper() == "PICKUP") if "type" in s else s.get("is_pickup", True)
+            s["is_pickup"] = is_p
+            s["type"] = "PICKUP" if is_p else "DROPOFF"
+            s_lt = float(s.get("lat") if "lat" in s else s.get("x", 0.0))
+            s_lg = float(s.get("lng") if "lng" in s else s.get("y", 0.0))
+            s["lat"] = s_lt
+            s["lng"] = s_lg
+            s["x"] = s_lt
+            s["y"] = s_lg
+            if "weight_delta_tons" in s and s["weight_delta_tons"] is not None:
+                w_v = float(s["weight_delta_tons"])
+                s["weight_delta_tons"] = w_v
+                s["load_change"] = w_v
+            elif "load_change" in s and s["load_change"] is not None:
+                l_v = float(s["load_change"])
+                s["load_change"] = l_v
+                s["weight_delta_tons"] = l_v
+
+        origin_name = payload.origin_name or first_p.get("name") or first_p.get("label") or "Origin"
+        dest_name = payload.dest_name or last_d.get("name") or last_d.get("label") or "Dest"
         pickup_lat = float(payload.pickup_lat if payload.pickup_lat is not None else (first_p.get("lat") if "lat" in first_p else first_p.get("x", 0.0)))
         pickup_lng = float(payload.pickup_lng if payload.pickup_lng is not None else (first_p.get("lng") if "lng" in first_p else first_p.get("y", 0.0)))
         dropoff_lat = float(payload.dropoff_lat if payload.dropoff_lat is not None else (last_d.get("lat") if "lat" in last_d else last_d.get("x", 0.0)))

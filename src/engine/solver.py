@@ -70,12 +70,21 @@ def evaluate_request_insertion(
             else:
                 l_change = float(s.get("load_change", 0.0))
 
+            s_name = s.get("name") or s.get("label") or "stop"
+            s_lat = float(s.get("lat") if "lat" in s else s.get("x", 0.0))
+            s_lng = float(s.get("lng") if "lng" in s else s.get("y", 0.0))
             stop_obj = {
-                "name": s.get("name", "stop"),
-                "x": float(s.get("lat") if "lat" in s else s.get("x", 0.0)),
-                "y": float(s.get("lng") if "lng" in s else s.get("y", 0.0)),
+                "name": s_name,
+                "label": s.get("label") or s_name,
+                "stop_id": s.get("stop_id") or s_name,
+                "x": s_lat,
+                "y": s_lng,
+                "lat": s_lat,
+                "lng": s_lng,
                 "is_pickup": is_p,
+                "type": "PICKUP" if is_p else "DROPOFF",
                 "load_change": l_change,
+                "weight_delta_tons": l_change,
                 "latest_time_sec": float(s.get("latest_time_sec", 86400.0)),
                 "request_id": request.get("id"),
             }
