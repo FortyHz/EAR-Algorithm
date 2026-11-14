@@ -1,3 +1,4 @@
+import os
 import hashlib
 import json
 import time
@@ -9,7 +10,10 @@ def get_benchmark_hash(filepath: str) -> str:
         return hashlib.sha256(f.read()).hexdigest()[:12]
 
 def run_harness():
-    bench_path = "benchmarks/ground_truth_cases.json"
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    if _dir not in sys.path:
+        sys.path.insert(0, _dir)
+    bench_path = os.path.join(_dir, "benchmarks", "ground_truth_cases.json") if not os.path.exists("benchmarks/ground_truth_cases.json") else "benchmarks/ground_truth_cases.json"
     bench_hash = get_benchmark_hash(bench_path)
 
     with open(bench_path, "r") as f:
